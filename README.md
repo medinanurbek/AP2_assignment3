@@ -1,80 +1,72 @@
-# AP2 Assignment 1 - Clean Architecture based Microservices (Order & Payment)
+# AP2 Assignment 2 - gRPC Migration & Streaming
 
-**Name:** Medina Nurbek 
-**Course:** Advanced Programming 2  
+**Student:** Taubakabyl Nurlybek  
+**Group:** [Your Group]  
 
-## Architecture Overview
+## Overview
+This project demonstrates the migration of a Microservices system from REST to gRPC following the **Contract-First** principle. It includes real-time order tracking using gRPC Server-side Streaming and PostgreSQL `LISTEN/NOTIFY`.
 
-The system is composed of two independent microservices built using Go and the Gin framework. Each microservice follows the principles of Clean Architecture to ensure separation of concerns, independency from frameworks, and testability.
+## Architecture
+The system consists of two main services communicating via gRPC. The Order Service also provides a real-time streaming endpoint for status updates.
 
-### Bounded Contexts
-1. **Order Service** (`order-service/`): Manages the ordering process, maintaining the lifecycle of an order from "Pending" to "Paid", "Failed", or "Cancelled".
-2. **Payment Service** (`payment-service/`): Evaluates transactions and limits. It rejects amounts over 100,000 units independently without needing context regarding the broader e-commerce platform.
+```mermaid
+graph TD
+    User([User/Frontend]) -->|REST POST /orders| OrderService[Order Service]
+    OrderService -->|gRPC ProcessPayment| PaymentService[Payment Service]
+    PaymentService -.->|Returns Status| OrderService
+    OrderService -->|DB UPDATE orders| Postgres[(PostgreSQL)]
+    Postgres -.->|LISTEN/NOTIFY| OrderService
+    OrderService -->|gRPC Stream StatusUpdate| UserStream([Streaming Client])
+    
+    subgraph "Contract-First Flow"
+        Protos[Proto Repository] -->|GitHub Actions| Generated[Generated Code Repo]
+        Generated -->|go get| OrderService
+        Generated -->|go get| PaymentService
+    end
+    
+    subgraph "Payment Service extras"
+        Logger([Logging Interceptor])
+    end
+```
 
-### Strict Microservices Rules Observed
-- **No Shared Code:** Each service has its own copy of the `domain` models inside its module. Code is completely decoupled. No shared `/pkg` module exists.
-- **Database per Service:** The `migrations/` folder in each service defines independent schemas, expecting separate databases per microservice architecture rules.
-- **Dependency Inversion / Composition Root:** Services declare `Repository` and outgoing `Gateway` interfaces within their domain layer. Implementations (HTTP, Postgres) are passed down at the start wire up in `.cmd/*/main.go`.
+## Repositories
+- **Proto Repository:** [Link to Protos Repo](https://github.com/medinanurbek/protos-reprository)
+- **Generated Code Repository:** [Link to Generated Repo](https://github.com/medinanurbek/generated-repo)
 
-### Failure Handling & Resilience
-- **Network Resiliency:** Order Service performs a synchronous call to Payment Service using a custom HTTP client configured with a strict `2-second timeout`.
-- **Fault Tolerance:** If Payment Service is down or times out, the `POST /orders` endpoint immediately aborts waiting, and falls back to a gracefully handled HTTP 503 (Service Unavailable) message. The `Order` is marked as `Failed` in the database, allowing for audit-tracing.
+## Key Features
+- **Contract-First**: Protos are managed in a separate repo with automated Go code generation via GitHub Actions.
+- **gRPC Unary**: Internal payment processing between Order and Payment services.
+- **gRPC Streaming**: Real-time order status updates triggered by database changes (PostgreSQL `NOTIFY`).
+- **Clean Architecture**: Business logic remains separated from the transport layer.
+- **Interceptor**: Logging middleware in the Payment Service to track request duration.
 
-### Idempotency (Bonus)
-The `Order Service` features a cross-goroutine caching mechanism that filters duplicate `POST /orders` requests based on an optional `Idempotency-Key` header. Sending duplicate requests with the same key returns the historically processed order transparently, without duplicating order database inserts or repeating upstream HTTP calls to `Payment Service`.
+## How to Run
 
----
+### 1. Prerequisites
+- PostgreSQL running with two databases: `order_db` and `payment_db`.
+- Apply the `migrations/init.sql` to `order_db` to setup the LISTEN/NOTIFY trigger.
 
-## Instructions
-
-### Setup Database
-1. Execute `init.sql` located inside `order-service/migrations/` on your Order Database instance.
-2. Execute `init.sql` located inside `payment-service/migrations/` on your Payment Database instance.
-
-### Build & Run
-Run Payment Service:
+### 2. Start Services
 ```bash
-cd payment-service
+# In payment-service directory
 go run cmd/payment-service/main.go
-# Starts on port 8081
-```
 
-Run Order Service:
-```bash
-cd order-service
+# In order-service directory
 go run cmd/order-service/main.go
-# Starts on port 8080
 ```
 
----
-
-## API Examples
-
-### 1. Create an Order (Success Case)
+### 3. Test Streaming (The Defense Demo)
+Open a new terminal and run the demo client:
 ```bash
-curl -X POST http://localhost:8080/orders \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: test-key-01" \
-  -d '{"customer_id": "CUST123", "item_name": "Laptop", "amount": 15000}'
+go run cmd/order-service/client/main.go --order_id=YOUR_ORDER_UUID
 ```
-
-### 2. Create an Order with Duplicate Key (Idempotency Demo)
-*Run the command above twice.* The second time, no database row is added, representing duplicate protection.
-
-### 3. Create an Order (Declined Case - Amount > 100000)
-```bash
-curl -X POST http://localhost:8082/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customer_id": "CUST123", "item_name": "Expensive Car", "amount": 250000}'
+Then, update the order status in the DB manually:
+```sql
+UPDATE orders SET status = 'Paid' WHERE id = 'YOUR_ORDER_UUID';
 ```
+You will see the update appear instantly in the terminal client.
 
-### 4. Retrieve an Order
-```bash
-# Substitute the returned database UUID
-curl -X GET http://localhost:8082/orders/{order_id}
-```
-
-### 5. Simulate 2-second Timeout & Failure Cas
-1. **Stop** the Payment Service terminal.
-2. Post an order to Order Service.
-3. Order Service waits 2 seconds max, then returns a **503 Service Unavailable** with the order status correctly marked as `Failed`.
+## Environment Variables
+- `PAYMENT_GRPC_URL`: Address of the payment gRPC server (default `localhost:50051`).
+- `ORDER_DB_DSN`: PostgreSQL connection string for Order Service.
+- `GRPC_PORT`: Port for the gRPC server (Order Service uses `50052`).

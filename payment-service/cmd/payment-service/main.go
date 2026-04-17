@@ -3,14 +3,18 @@ package main
 import (
 	"database/sql"
 	"log"
+	"net"
 	"os"
 
 	"payment-service/internal/repository"
+	grpctransport "payment-service/internal/transport/grpc"
 	httptransport "payment-service/internal/transport/http"
 	"payment-service/internal/usecase"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
+	paymentpb "github.com/medinanurbek/generated-repo/go/payment"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -30,17 +34,43 @@ func main() {
 
 	repo := repository.NewPostgresPaymentRepository(db)
 	useCase := usecase.NewPaymentUseCase(repo)
-	handler := httptransport.NewPaymentHandler(useCase)
-
+	
+	// REST HTTP setup
+	httpHandler := httptransport.NewPaymentHandler(useCase)
 	r := gin.Default()
-	httptransport.RegisterRoutes(r, handler)
+	httptransport.RegisterRoutes(r, httpHandler)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8081"
+	httpPort := os.Getenv("PORT")
+	if httpPort == "" {
+		httpPort = "8081"
 	}
-	log.Printf("Starting Payment Service on port %s...", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	
+	// gRPC Setup
+	grpcPort := os.Getenv("GRPC_PORT")
+	if grpcPort == "" {
+		grpcPort = "50051"
+	}
+
+	listener, err := net.Listen("tcp", ":"+grpcPort)
+	if err != nil {
+		log.Fatalf("Failed to listen for gRPC: %v", err)
+	}
+
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(grpctransport.LoggingInterceptor),
+	)
+	grpcHandler := grpctransport.NewPaymentHandler(useCase)
+	paymentpb.RegisterPaymentServiceServer(grpcServer, grpcHandler)
+
+	log.Printf("Starting Payment Service gRPC on port %s...", grpcPort)
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatalf("Failed to start gRPC server: %v", err)
+		}
+	}()
+
+	log.Printf("Starting Payment Service HTTP on port %s...", httpPort)
+	if err := r.Run(":" + httpPort); err != nil {
+		log.Fatalf("Failed to start HTTP server: %v", err)
 	}
 }
