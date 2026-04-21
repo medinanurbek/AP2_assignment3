@@ -11,6 +11,7 @@ type PaymentUseCase interface {
 	ProcessPayment(orderID string, amount int64) (*domain.Payment, error)
 	GetPaymentStatus(orderID string) (*domain.Payment, error)
 	GetAllPayments() ([]*domain.Payment, error)
+	ListPayments(min, max int64) ([]*domain.Payment, error)
 }
 
 type paymentUseCase struct {
@@ -53,4 +54,11 @@ func (u *paymentUseCase) GetPaymentStatus(orderID string) (*domain.Payment, erro
 
 func (u *paymentUseCase) GetAllPayments() ([]*domain.Payment, error) {
 	return u.repo.GetAll()
+}
+
+func (u *paymentUseCase) ListPayments(min, max int64) ([]*domain.Payment, error) {
+	if max > 0 && min > max {
+		return nil, errors.New("min_amount cannot be greater than max_amount")
+	}
+	return u.repo.FindByAmountRange(min, max)
 }

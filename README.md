@@ -1,7 +1,7 @@
 # AP2 Assignment 2 - gRPC Migration & Streaming
 
-**Student:** Taubakabyl Nurlybek  
-**Group:** [Your Group]  
+**Student:** Medina Nurbek
+**Group:** SE-2409
 
 ## Overview
 This project demonstrates the migration of a Microservices system from REST to gRPC following the **Contract-First** principle. It includes real-time order tracking using gRPC Server-side Streaming and PostgreSQL `LISTEN/NOTIFY`.
@@ -30,8 +30,8 @@ graph TD
 ```
 
 ## Repositories
-- **Proto Repository:** [Link to Protos Repo](https://github.com/medinanurbek/protos-reprository)
-- **Generated Code Repository:** [Link to Generated Repo](https://github.com/medinanurbek/generated-repo)
+- **Proto Repository:** https://github.com/medinanurbek/protos-reprository
+- **Generated Code Repository:** https://github.com/medinanurbek/generated-repo
 
 ## Key Features
 - **Contract-First**: Protos are managed in a separate repo with automated Go code generation via GitHub Actions.

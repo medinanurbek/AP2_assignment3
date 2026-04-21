@@ -5,6 +5,9 @@ import (
 
 	paymentpb "github.com/medinanurbek/generated-repo/go/payment"
 	"payment-service/internal/usecase"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type PaymentHandler struct {
@@ -20,11 +23,36 @@ func (h *PaymentHandler) ProcessPayment(ctx context.Context, req *paymentpb.Paym
 	// Cast float64 to int64 because the proto amount is double while the logic expects int64
 	payment, err := h.useCase.ProcessPayment(req.GetOrderId(), int64(req.GetAmount()))
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to process payment: %v", err)
 	}
 
 	return &paymentpb.PaymentResponse{
 		Status:        payment.Status,
 		TransactionId: payment.TransactionID,
+		Amount:        float64(payment.Amount),
+	}, nil
+}
+
+func (h *PaymentHandler) ListPayments(ctx context.Context, req *paymentpb.ListPaymentsRequest) (*paymentpb.ListPaymentsResponse, error) {
+	payments, err := h.useCase.ListPayments(req.GetMinAmount(), req.GetMaxAmount())
+	if err != nil {
+		// If the error is from our validation, use InvalidArgument
+		if err.Error() == "min_amount cannot be greater than max_amount" {
+			return nil, status.Errorf(codes.InvalidArgument, "validation error: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to list payments: %v", err)
+	}
+
+	var pbPayments []*paymentpb.PaymentResponse
+	for _, p := range payments {
+		pbPayments = append(pbPayments, &paymentpb.PaymentResponse{
+			Status:        p.Status,
+			TransactionId: p.TransactionID,
+			Amount:        float64(p.Amount),
+		})
+	}
+
+	return &paymentpb.ListPaymentsResponse{
+		Payments: pbPayments,
 	}, nil
 }

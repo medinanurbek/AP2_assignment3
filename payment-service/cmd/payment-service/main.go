@@ -15,6 +15,7 @@ import (
 	_ "github.com/lib/pq"
 	paymentpb "github.com/medinanurbek/generated-repo/go/payment"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 func main() {
@@ -34,7 +35,7 @@ func main() {
 
 	repo := repository.NewPostgresPaymentRepository(db)
 	useCase := usecase.NewPaymentUseCase(repo)
-	
+
 	// REST HTTP setup
 	httpHandler := httptransport.NewPaymentHandler(useCase)
 	r := gin.Default()
@@ -44,7 +45,7 @@ func main() {
 	if httpPort == "" {
 		httpPort = "8081"
 	}
-	
+
 	// gRPC Setup
 	grpcPort := os.Getenv("GRPC_PORT")
 	if grpcPort == "" {
@@ -61,6 +62,7 @@ func main() {
 	)
 	grpcHandler := grpctransport.NewPaymentHandler(useCase)
 	paymentpb.RegisterPaymentServiceServer(grpcServer, grpcHandler)
+	reflection.Register(grpcServer)
 
 	log.Printf("Starting Payment Service gRPC on port %s...", grpcPort)
 	go func() {
