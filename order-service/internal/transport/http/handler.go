@@ -37,9 +37,10 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	var req struct {
-		CustomerID string `json:"customer_id"`
-		ItemName   string `json:"item_name"`
-		Amount     int64  `json:"amount"`
+		CustomerID    string `json:"customer_id"`
+		CustomerEmail string `json:"customer_email"`
+		ItemName      string `json:"item_name"`
+		Amount        int64  `json:"amount"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -47,7 +48,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	order, err := h.useCase.CreateOrder(req.CustomerID, req.ItemName, req.Amount)
+	order, err := h.useCase.CreateOrder(req.CustomerID, req.CustomerEmail, req.ItemName, req.Amount)
 
 	if err != nil && order != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{

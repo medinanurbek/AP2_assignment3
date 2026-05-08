@@ -17,8 +17,9 @@ func NewPaymentHandler(uc usecase.PaymentUseCase) *PaymentHandler {
 
 func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
 	var req struct {
-		OrderID string `json:"order_id"`
-		Amount  int64  `json:"amount"`
+		OrderID       string `json:"order_id"`
+		Amount        int64  `json:"amount"`
+		CustomerEmail string `json:"customer_email"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -26,7 +27,7 @@ func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
 		return
 	}
 
-	payment, err := h.useCase.ProcessPayment(req.OrderID, req.Amount)
+	payment, err := h.useCase.ProcessPayment(req.OrderID, req.Amount, req.CustomerEmail)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

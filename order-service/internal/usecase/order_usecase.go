@@ -16,7 +16,7 @@ var (
 )
 
 type OrderUseCase interface {
-	CreateOrder(customerID, itemName string, amount int64) (*domain.Order, error)
+	CreateOrder(customerID, customerEmail, itemName string, amount int64) (*domain.Order, error)
 	GetOrder(id string) (*domain.Order, error)
 	GetAllOrders() ([]*domain.Order, error)
 	CancelOrder(id string) error
@@ -33,18 +33,19 @@ func NewOrderUseCase(repo domain.OrderRepository, payment domain.PaymentGateway)
 	return &orderUseCase{repo: repo, payment: payment}
 }
 
-func (u *orderUseCase) CreateOrder(customerID, itemName string, amount int64) (*domain.Order, error) {
+func (u *orderUseCase) CreateOrder(customerID, customerEmail, itemName string, amount int64) (*domain.Order, error) {
 	if amount <= 0 {
 		return nil, ErrInvalidAmount
 	}
 
 	order := &domain.Order{
-		ID:         uuid.New().String(),
-		CustomerID: customerID,
-		ItemName:   itemName,
-		Amount:     amount,
-		Status:     "Pending",
-		CreatedAt:  time.Now(),
+		ID:            uuid.New().String(),
+		CustomerID:    customerID,
+		CustomerEmail: customerEmail,
+		ItemName:      itemName,
+		Amount:        amount,
+		Status:        "Pending",
+		CreatedAt:     time.Now(),
 	}
 
 	err := u.repo.Save(order)
@@ -52,7 +53,7 @@ func (u *orderUseCase) CreateOrder(customerID, itemName string, amount int64) (*
 		return nil, err
 	}
 
-	payInfo, err := u.payment.ProcessPayment(order.ID, order.Amount)
+	payInfo, err := u.payment.ProcessPayment(order.ID, order.Amount, order.CustomerEmail)
 	if err != nil {
 		u.repo.UpdateStatus(order.ID, "Failed")
 		order.Status = "Failed"

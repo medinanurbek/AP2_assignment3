@@ -4,12 +4,18 @@ import (
 	"database/sql"
 	"log"
 	"net"
+	"net/http"
 	"os"
 
 	"payment-service/internal/repository"
 	grpctransport "payment-service/internal/transport/grpc"
 	httptransport "payment-service/internal/transport/http"
 	"payment-service/internal/usecase"
+	"payment-service/internal/rabbitmq"
+	"os/signal"
+	"syscall"
+	"context"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -33,8 +39,21 @@ func main() {
 		log.Printf("Failed to ping DB: %v. Continuing without DB for demonstration...", err)
 	}
 
+	rabbitURL := os.Getenv("RABBITMQ_URL")
+	if rabbitURL == "" {
+		rabbitURL = "amqp://user:password@localhost:5672/"
+	}
+
+	publisher, err := rabbitmq.NewRabbitMQPublisher(rabbitURL)
+	if err != nil {
+		log.Printf("Failed to connect to RabbitMQ, running without publisher: %v", err)
+		publisher = nil // will be handled in useCase
+	} else {
+		defer publisher.Close()
+	}
+
 	repo := repository.NewPostgresPaymentRepository(db)
-	useCase := usecase.NewPaymentUseCase(repo)
+	useCase := usecase.NewPaymentUseCase(repo, publisher)
 
 	// REST HTTP setup
 	httpHandler := httptransport.NewPaymentHandler(useCase)
@@ -71,8 +90,31 @@ func main() {
 		}
 	}()
 
-	log.Printf("Starting Payment Service HTTP on port %s...", httpPort)
-	if err := r.Run(":" + httpPort); err != nil {
-		log.Fatalf("Failed to start HTTP server: %v", err)
+	srv := &http.Server{
+		Addr:    ":" + httpPort,
+		Handler: r,
 	}
+
+	log.Printf("Starting Payment Service HTTP on port %s...", httpPort)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start HTTP server: %v", err)
+		}
+	}()
+
+	// Graceful Shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down servers...")
+
+	grpcServer.GracefulStop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("HTTP Server Shutdown Error:", err)
+	}
+
+	log.Println("Server exiting")
 }

@@ -1,0 +1,23 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+obj/
+
+# Docker
+rabbitmq_data/
+postgres_data_order/
+postgres_data_payment/
+
+# Go
+vendor/
+*.log
+.env
+
+# IDEs
+.idea/
+.vscode/
+.DS_Store

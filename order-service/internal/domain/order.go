@@ -4,11 +4,12 @@ import "time"
 
 type Order struct {
 	ID         string
-	CustomerID string
-	ItemName   string
-	Amount     int64
-	Status     string // "Pending", "Paid", "Failed", "Cancelled"
-	CreatedAt  time.Time
+	CustomerID    string
+	CustomerEmail string
+	ItemName      string
+	Amount        int64
+	Status        string // "Pending", "Paid", "Failed", "Cancelled"
+	CreatedAt     time.Time
 }
 
 type OrderRepository interface {
@@ -31,5 +32,5 @@ type PaymentInfo struct {
 }
 
 type PaymentGateway interface {
-	ProcessPayment(orderID string, amount int64) (*PaymentInfo, error)
+	ProcessPayment(orderID string, amount int64, customerEmail string) (*PaymentInfo, error)
 }

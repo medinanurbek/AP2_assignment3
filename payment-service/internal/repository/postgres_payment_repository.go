@@ -14,18 +14,18 @@ func NewPostgresPaymentRepository(db *sql.DB) domain.PaymentRepository {
 }
 
 func (r *postgresPaymentRepository) Save(payment *domain.Payment) error {
-	query := `INSERT INTO payments (id, order_id, transaction_id, amount, status)
-			  VALUES ($1, $2, $3, $4, $5)`
-	_, err := r.db.Exec(query, payment.ID, payment.OrderID, payment.TransactionID, payment.Amount, payment.Status)
+	query := `INSERT INTO payments (id, order_id, customer_email, transaction_id, amount, status)
+			  VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err := r.db.Exec(query, payment.ID, payment.OrderID, payment.CustomerEmail, payment.TransactionID, payment.Amount, payment.Status)
 	return err
 }
 
 func (r *postgresPaymentRepository) GetByOrderID(orderID string) (*domain.Payment, error) {
-	query := `SELECT id, order_id, transaction_id, amount, status FROM payments WHERE order_id = $1`
+	query := `SELECT id, order_id, customer_email, transaction_id, amount, status FROM payments WHERE order_id = $1`
 	row := r.db.QueryRow(query, orderID)
 
 	var p domain.Payment
-	err := row.Scan(&p.ID, &p.OrderID, &p.TransactionID, &p.Amount, &p.Status)
+	err := row.Scan(&p.ID, &p.OrderID, &p.CustomerEmail, &p.TransactionID, &p.Amount, &p.Status)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // or domain specific error
@@ -36,7 +36,7 @@ func (r *postgresPaymentRepository) GetByOrderID(orderID string) (*domain.Paymen
 }
 
 func (r *postgresPaymentRepository) GetAll() ([]*domain.Payment, error) {
-	query := `SELECT id, order_id, transaction_id, amount, status FROM payments`
+	query := `SELECT id, order_id, customer_email, transaction_id, amount, status FROM payments`
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,27 @@ func (r *postgresPaymentRepository) GetAll() ([]*domain.Payment, error) {
 	var payments []*domain.Payment
 	for rows.Next() {
 		var p domain.Payment
-		if err := rows.Scan(&p.ID, &p.OrderID, &p.TransactionID, &p.Amount, &p.Status); err != nil {
+		if err := rows.Scan(&p.ID, &p.OrderID, &p.CustomerEmail, &p.TransactionID, &p.Amount, &p.Status); err != nil {
+			return nil, err
+		}
+		payments = append(payments, &p)
+	}
+	return payments, nil
+}
+
+func (r *postgresPaymentRepository) ListByStatus(status string) ([]*domain.Payment, error) {
+	query := `SELECT id, order_id, customer_email, transaction_id, amount, status FROM payments WHERE status = $1`
+	
+	rows, err := r.db.Query(query, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var payments []*domain.Payment
+	for rows.Next() {
+		var p domain.Payment
+		if err := rows.Scan(&p.ID, &p.OrderID, &p.CustomerEmail, &p.TransactionID, &p.Amount, &p.Status); err != nil {
 			return nil, err
 		}
 		payments = append(payments, &p)
@@ -64,10 +84,10 @@ func (r *postgresPaymentRepository) FindByAmountRange(min, max int64) ([]*domain
 	var args []interface{}
 
 	if max > 0 {
-		query = `SELECT id, order_id, transaction_id, amount, status FROM payments WHERE amount >= $1 AND amount <= $2`
+		query = `SELECT id, order_id, customer_email, transaction_id, amount, status FROM payments WHERE amount >= $1 AND amount <= $2`
 		args = []interface{}{min, max}
 	} else {
-		query = `SELECT id, order_id, transaction_id, amount, status FROM payments WHERE amount >= $1`
+		query = `SELECT id, order_id, customer_email, transaction_id, amount, status FROM payments WHERE amount >= $1`
 		args = []interface{}{min}
 	}
 
@@ -80,7 +100,7 @@ func (r *postgresPaymentRepository) FindByAmountRange(min, max int64) ([]*domain
 	var payments []*domain.Payment
 	for rows.Next() {
 		var p domain.Payment
-		if err := rows.Scan(&p.ID, &p.OrderID, &p.TransactionID, &p.Amount, &p.Status); err != nil {
+		if err := rows.Scan(&p.ID, &p.OrderID, &p.CustomerEmail, &p.TransactionID, &p.Amount, &p.Status); err != nil {
 			return nil, err
 		}
 		payments = append(payments, &p)

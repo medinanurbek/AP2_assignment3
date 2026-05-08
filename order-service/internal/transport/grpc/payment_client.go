@@ -40,10 +40,11 @@ func NewPaymentGRPCClient(addr string) (domain.PaymentGateway, func(), error) {
 }
 
 // ProcessPayment calls the Payment service via gRPC.
-func (c *PaymentGRPCClient) ProcessPayment(orderID string, amount int64) (*domain.PaymentInfo, error) {
+func (c *PaymentGRPCClient) ProcessPayment(orderID string, amount int64, customerEmail string) (*domain.PaymentInfo, error) {
 	resp, err := c.client.ProcessPayment(context.Background(), &paymentpb.PaymentRequest{
-		OrderId: orderID,
-		Amount:  float64(amount),
+		OrderId:       orderID,
+		Amount:        float64(amount),
+		CustomerEmail: customerEmail,
 	})
 	if err != nil {
 		return nil, err

@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"order-service/internal/repository"
 	grpctransport "order-service/internal/transport/grpc"
@@ -74,7 +79,7 @@ func main() {
 		}
 	}()
 
-	// 6. Setup REST HTTP Server (Existing)
+	// 6. Setup REST HTTP Server
 	httpHandler := httptransport.NewOrderHandler(useCase)
 	r := gin.Default()
 	httptransport.RegisterRoutes(r, httpHandler)
@@ -83,9 +88,34 @@ func main() {
 	if httpPort == "" {
 		httpPort = "8082"
 	}
-	log.Printf("Starting Order HTTP Service on port %s...", httpPort)
-	if err := r.Run(":" + httpPort); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+
+	srv := &http.Server{
+		Addr:    ":" + httpPort,
+		Handler: r,
 	}
+
+	log.Printf("Starting Order HTTP Service on port %s...", httpPort)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Graceful Shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down Order Service servers...")
+
+	grpcServer.GracefulStop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Order HTTP Server Shutdown Error:", err)
+	}
+
+	log.Println("Order Service exiting")
 }
+
 

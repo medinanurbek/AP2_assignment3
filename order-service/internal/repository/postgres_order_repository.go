@@ -14,18 +14,18 @@ func NewPostgresOrderRepository(db *sql.DB) domain.OrderRepository {
 }
 
 func (r *postgresOrderRepository) Save(order *domain.Order) error {
-	query := `INSERT INTO orders (id, customer_id, item_name, amount, status, created_at)
-			  VALUES ($1, $2, $3, $4, $5, $6)`
-	_, err := r.db.Exec(query, order.ID, order.CustomerID, order.ItemName, order.Amount, order.Status, order.CreatedAt)
+	query := `INSERT INTO orders (id, customer_id, customer_email, item_name, amount, status, created_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	_, err := r.db.Exec(query, order.ID, order.CustomerID, order.CustomerEmail, order.ItemName, order.Amount, order.Status, order.CreatedAt)
 	return err
 }
 
 func (r *postgresOrderRepository) GetByID(id string) (*domain.Order, error) {
-	query := `SELECT id, customer_id, item_name, amount, status, created_at FROM orders WHERE id = $1`
+	query := `SELECT id, customer_id, customer_email, item_name, amount, status, created_at FROM orders WHERE id = $1`
 	row := r.db.QueryRow(query, id)
 
 	var o domain.Order
-	err := row.Scan(&o.ID, &o.CustomerID, &o.ItemName, &o.Amount, &o.Status, &o.CreatedAt)
+	err := row.Scan(&o.ID, &o.CustomerID, &o.CustomerEmail, &o.ItemName, &o.Amount, &o.Status, &o.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -36,7 +36,7 @@ func (r *postgresOrderRepository) GetByID(id string) (*domain.Order, error) {
 }
 
 func (r *postgresOrderRepository) GetAll() ([]*domain.Order, error) {
-	query := `SELECT id, customer_id, item_name, amount, status, created_at FROM orders`
+	query := `SELECT id, customer_id, customer_email, item_name, amount, status, created_at FROM orders`
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func (r *postgresOrderRepository) GetAll() ([]*domain.Order, error) {
 	var orders []*domain.Order
 	for rows.Next() {
 		var o domain.Order
-		if err := rows.Scan(&o.ID, &o.CustomerID, &o.ItemName, &o.Amount, &o.Status, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.CustomerID, &o.CustomerEmail, &o.ItemName, &o.Amount, &o.Status, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		orders = append(orders, &o)
@@ -61,7 +61,7 @@ func (r *postgresOrderRepository) UpdateStatus(id string, status string) error {
 }
 
 func (r *postgresOrderRepository) GetByAmountRange(min, max int64) ([]*domain.Order, error) {
-	query := `SELECT id, customer_id, item_name, amount, status, created_at FROM orders WHERE amount >= $1 AND amount <= $2`
+	query := `SELECT id, customer_id, customer_email, item_name, amount, status, created_at FROM orders WHERE amount >= $1 AND amount <= $2`
 
 	rows, err := r.db.Query(query, min, max)
 	if err != nil {
@@ -72,7 +72,7 @@ func (r *postgresOrderRepository) GetByAmountRange(min, max int64) ([]*domain.Or
 	var orders []*domain.Order
 	for rows.Next() {
 		var o domain.Order
-		if err := rows.Scan(&o.ID, &o.CustomerID, &o.ItemName, &o.Amount, &o.Status, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.CustomerID, &o.CustomerEmail, &o.ItemName, &o.Amount, &o.Status, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		orders = append(orders, &o)

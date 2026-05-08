@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../proto-repo"
+		},
+		{
+			"path": "../../../../generated-repo"
+		}
+	],
+	"settings": {}
+}
