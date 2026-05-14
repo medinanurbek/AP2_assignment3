@@ -14,11 +14,13 @@ import (
 	"order-service/internal/repository"
 	grpctransport "order-service/internal/transport/grpc"
 	httptransport "order-service/internal/transport/http"
+	"order-service/internal/transport/http/middleware"
 	"order-service/internal/usecase"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	orderpb "github.com/medinanurbek/generated-repo/go/order"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 )
 
@@ -54,9 +56,19 @@ func main() {
 	}
 	defer cleanup()
 
+	// 3.5 Initialize Redis for Caching and Rate Limiting
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "localhost:6379"
+	}
+	rdb := redis.NewClient(&redis.Options{
+		Addr: redisURL,
+	})
+
 	// 4. Initialize Core Logic
 	repo := repository.NewPostgresOrderRepository(db)
-	useCase := usecase.NewOrderUseCase(repo, paymentClient)
+	cache := repository.NewRedisOrderCache(rdb)
+	useCase := usecase.NewOrderUseCase(repo, paymentClient, cache)
 
 	// 5. Setup gRPC Server (for Streaming)
 	grpcPort := os.Getenv("GRPC_PORT")
@@ -82,6 +94,8 @@ func main() {
 	// 6. Setup REST HTTP Server
 	httpHandler := httptransport.NewOrderHandler(useCase)
 	r := gin.Default()
+	// Apply rate limit: 10 requests per minute
+	r.Use(middleware.RateLimiter(rdb, 10, time.Minute))
 	httptransport.RegisterRoutes(r, httpHandler)
 
 	httpPort := os.Getenv("PORT")

@@ -21,6 +21,12 @@ type OrderRepository interface {
 	GetCustomerRevenue(customerID string) (*CustomerRevenue, error)
 }
 
+type OrderCache interface {
+	Get(id string) (*Order, error)
+	Set(order *Order, ttl time.Duration) error
+	Delete(id string) error
+}
+
 type CustomerRevenue struct {
 	CustomerID  string `json:"customer_id"`
 	TotalAmount int64  `json:"total_amount"`

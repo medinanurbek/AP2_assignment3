@@ -27,10 +27,11 @@ type OrderUseCase interface {
 type orderUseCase struct {
 	repo    domain.OrderRepository
 	payment domain.PaymentGateway
+	cache   domain.OrderCache
 }
 
-func NewOrderUseCase(repo domain.OrderRepository, payment domain.PaymentGateway) OrderUseCase {
-	return &orderUseCase{repo: repo, payment: payment}
+func NewOrderUseCase(repo domain.OrderRepository, payment domain.PaymentGateway, cache domain.OrderCache) OrderUseCase {
+	return &orderUseCase{repo: repo, payment: payment, cache: cache}
 }
 
 func (u *orderUseCase) CreateOrder(customerID, customerEmail, itemName string, amount int64) (*domain.Order, error) {
@@ -68,11 +69,31 @@ func (u *orderUseCase) CreateOrder(customerID, customerEmail, itemName string, a
 	u.repo.UpdateStatus(order.ID, status)
 	order.Status = status
 
+	// Invalidate cache after status change
+	_ = u.cache.Delete(order.ID)
+
 	return order, nil
 }
 
 func (u *orderUseCase) GetOrder(id string) (*domain.Order, error) {
-	return u.repo.GetByID(id)
+	// Try cache first
+	order, err := u.cache.Get(id)
+	if err == nil && order != nil {
+		return order, nil
+	}
+
+	// Cache miss, get from DB
+	order, err = u.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if order != nil {
+		// Store in cache for 5 minutes
+		_ = u.cache.Set(order, 5*time.Minute)
+	}
+
+	return order, nil
 }
 
 func (u *orderUseCase) GetAllOrders() ([]*domain.Order, error) {
@@ -91,7 +112,11 @@ func (u *orderUseCase) CancelOrder(id string) error {
 		return ErrCannotCancel
 	}
 
-	return u.repo.UpdateStatus(id, "Cancelled")
+	err = u.repo.UpdateStatus(id, "Cancelled")
+	if err == nil {
+		_ = u.cache.Delete(id)
+	}
+	return err
 }
 
 func (u *orderUseCase) GetOrdersByAmount(minAmount, maxAmount int64) ([]*domain.Order, error) {

@@ -1,102 +1,66 @@
-# Advanced Programming 2 - Assignment 3
+# Advanced Programming 2 - Assignment 4
 **Student:** Medina Nurbek
-**Topic:** Event-Driven Architecture (EDA) with Message Queues
+**Topic:** Performance Optimization & External Integrations
 
 ## Project Overview
-This project implements an asynchronous event-driven flow between microservices using **RabbitMQ**. When a payment is successfully processed in the `payment-service`, it publishes an event that the `notification-service` consumes to simulate sending an email.
+This project builds upon the microservices architecture from previous assignments, introducing **Redis Caching** for performance optimization and a robust **Background Worker** with **Adapter Pattern** for external notifications.
 
-### Event Flow:
-1. **Order Service**: Receives order requests via REST and triggers payment via gRPC.
-2. **Payment Service**: Processes payment, saves to PostgreSQL, and publishes a `payment.completed` event to RabbitMQ.
-3. **Notification Service**: Listens for `payment.completed` events, ensures they are not duplicates (Idempotency), and logs the notification.
+## Key Features
 
-### Architecture Diagram:
-```mermaid
-graph TD
-    User((User/Postman)) -- "1. POST /orders (REST)" --> OS[Order Service]
-    OS -- "2. ProcessPayment (gRPC)" --> PS[Payment Service]
-    PS -- "3. Save to DB" --> PDB[(Payment DB)]
-    
-    subgraph RabbitMQ Broker
-        PS -- "4. Publish 'payment.completed'" --> EX[Exchange]
-        EX -- "Route" --> Q[Queue: payment.completed]
-        Q -- "If Fail (Nack)" --> DLX[Dead Letter Exchange]
-        DLX --> DLQ[Queue: payment.dlq]
-    end
-    
-    Q -- "5. Consume" --> NS[Notification Service]
-    NS -- "6. Idempotency Check" --> Cache{Already processed?}
-    Cache -- "No" --> Log[Log: Sent Email]
-    Cache -- "Yes" --> Ignore[Log: Ignore Duplicate]
-    Log -- "7. Manual ACK" --> Q
-```
+### 1. Redis Caching (Order Service)
+- **Pattern**: Cache-aside (Lazy Loading).
+- **Read Path**: The system checks Redis for order details before querying the PostgreSQL database.
+- **TTL**: Cache keys expire after 5 minutes (300s).
+- **Invalidation Strategy**: 
+    - **Atomic Invalidation**: The cache key is deleted immediately after any database update (e.g., status change to "Paid", "Failed", or "Cancelled") in the UseCase layer.
+    - This ensures data consistency by forcing the next read to fetch the latest state from the database.
 
-## Reliability & Delivery Guarantees
+### 2. External Provider Adapter (Notification Service)
+- **Adapter Pattern**: Decoupled notification logic via `EmailSender` interface.
+- **Providers**:
+    - `MockEmailSender`: Simulates network latency and random failures to test system resilience.
+    - `RealEmailSender`: Implements the same interface for future integration with real APIs like Mailjet or SMTP.
+- **Configuration**: Use `PROVIDER_MODE=REAL/SIMULATED` environment variable to toggle between implementations.
 
-### 1. Manual Acknowledgments (ACKs)
-To ensure **at-least-once delivery**, we have disabled `auto-ack` in the `notification-service`. 
-- The service only acknowledges the message (`d.Ack(false)`) **after** the processing logic (logging) has successfully completed.
-- If the service crashes during processing, the message remains in the queue and will be redelivered when the service restarts.
+### 3. Reliable Background Worker
+- **Idempotency**:
+    - Uses Redis `SetNX` with the `payment_id` as a key.
+    - Ensures that even if RabbitMQ delivers a message multiple times, the notification is only sent once.
+- **Retry Policy & Exponential Backoff**:
+    - If an external provider fails, the worker retries the job.
+    - **Exponential Backoff**: Delays between retries increase progressively (**2s, 4s, 8s**).
+- **DLQ Integration**: Messages that fail after all retries are moved to the Dead Letter Queue for manual inspection.
 
-### 2. Message Persistence
-- **Durable Queues**: All queues are declared with `durable: true`, meaning they survive a RabbitMQ broker restart.
-- **Persistent Messages**: The `payment-service` publishes messages with `DeliveryMode: amqp.Persistent`, ensuring messages are written to disk.
-
-### 3. Idempotency Strategy
-To handle potential duplicate messages safely:
-- Every message is published with a unique `MessageId` (derived from the `payment.ID`).
-- The `notification-service` maintains an in-memory cache (`processedMessages` map) of IDs it has already processed.
-- Before processing a new message, it checks the cache. If the ID exists, it ignores the message but still sends an `Ack` to remove it from the queue.
-
-## Bonus: Dead Letter Queue (DLQ)
-We have implemented a **Dead Letter Exchange (DLX)** and **DLQ**:
-- If a message fails to be parsed (invalid JSON), it is rejected with `d.Nack(false, false)`, which automatically moves it to the `payment.dlq` thanks to the `x-dead-letter-exchange` configuration.
-- This prevents "poison messages" from blocking the main queue.
-
-## Infrastructure
-The entire system is orchestrated using Docker Compose:
-- **RabbitMQ**: The message broker.
-- **PostgreSQL**: Databases for Order and Payment services.
-- **Order Service**: Port 8080 (REST).
-- **Payment Service**: Port 8081 (REST) / 50051 (gRPC).
-- **Notification Service**: Consumer.
-
-## Graceful Shutdown
-All services implement graceful shutdown using `os/signal`. They listen for `SIGINT` and `SIGTERM` to close database connections, RabbitMQ channels, and stop HTTP/gRPC servers properly before exiting.
-
----
-
-## How to Run
-```bash
-docker-compose up --build
-```
-
-## How to Test
-Send a POST request to `http://localhost:8080/orders`:
-```json
-{
-  "customer_id": "1",
-  "customer_email": "user@example.com",
-  "item_name": "Book",
-  "amount": 5000
-}
-```
+### 4. Bonus: API Rate Limiter
+- Implemented a Redis-based middleware for the Order Service.
+- **Limit**: 10 requests per minute per IP.
+- **Error**: Returns `HTTP 429 Too Many Requests` when the limit is exceeded, demonstrating Redis as a fast shared state store.
 
 ## Architecture Diagram
 ```mermaid
 graph TD
-    Client[Client REST] -->|POST /orders| OrderService[Order Service]
-    OrderService -->|gRPC| PaymentService[Payment Service]
-    PaymentService -->|Save to DB| PaymentDB[(Payment DB)]
-    PaymentService -->|Publish payment.completed| RabbitMQ{RabbitMQ Broker}
-    
-    subgraph "Event-Driven Flow"
-    RabbitMQ -->|Consume| NotificationService[Notification Service]
-    NotificationService -->|Manual ACK| RabbitMQ
-    NotificationService -.->|Log Email| Console[Console Output]
-    end
+    User((User)) -- "1. GET /orders/:id" --> OS[Order Service]
+    OS -- "2. Check Cache" --> Redis[(Redis Cache)]
+    Redis -- "3a. Cache Hit" --> OS
+    Redis -- "3b. Cache Miss" --> PDB[(Order DB)]
+    PDB -- "4. Return & Set Cache" --> OS
 
-    subgraph "Failure Handling"
-    NotificationService -->|Nack if Error| DLQ[Dead Letter Queue]
+    subgraph "Background Processing"
+        PS[Payment Service] -- "5. Publish Event" --> RMQ{RabbitMQ}
+        RMQ -- "6. Consume" --> NS[Notification Service]
+        NS -- "7. Idempotency Check" --> Redis
+        NS -- "8. Send Email (Adapter)" --> Provider{Provider: Mock/Real}
+        Provider -- "9. Retry with Backoff if Fail" --> NS
     end
+```
+
+## Infrastructure
+- **Redis**: Shared state for caching, rate limiting, and idempotency.
+- **RabbitMQ**: Message broker for asynchronous events.
+- **PostgreSQL**: Persistent storage for services.
+- **Docker Compose**: Complete environment orchestration.
+
+## How to Run
+```bash
+docker-compose up --build
 ```
