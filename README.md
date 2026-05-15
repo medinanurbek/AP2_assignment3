@@ -38,20 +38,53 @@ This project builds upon the microservices architecture from previous assignment
 
 ## Architecture Diagram
 ```mermaid
-graph TD
-    User((User)) -- "1. GET /orders/:id" --> OS[Order Service]
-    OS -- "2. Check Cache" --> Redis[(Redis Cache)]
-    Redis -- "3a. Cache Hit" --> OS
-    Redis -- "3b. Cache Miss" --> PDB[(Order DB)]
-    PDB -- "4. Return & Set Cache" --> OS
-
-    subgraph "Background Processing"
-        PS[Payment Service] -- "5. Publish Event" --> RMQ{RabbitMQ}
-        RMQ -- "6. Consume" --> NS[Notification Service]
-        NS -- "7. Idempotency Check" --> Redis
-        NS -- "8. Send Email (Adapter)" --> Provider{Provider: Mock/Real}
-        Provider -- "9. Retry with Backoff if Fail" --> NS
+graph TB
+    subgraph Clients
+        U[User/Client]
     end
+
+    subgraph "Order Service"
+        API[REST API]
+        RL[Rate Limiter - Redis]
+        UC[Order UseCase]
+        OCache[Cache Logic - Redis]
+    end
+
+    subgraph "Payment Service"
+        PAPI[gRPC Server]
+        PUC[Payment UseCase]
+    end
+
+    subgraph "Notification Service"
+        NS[Background Worker]
+        IDEM[Idempotency Check - Redis]
+        ADAPT[Email Adapter Pattern]
+    end
+
+    subgraph "Infrastructure"
+        R[(Redis)]
+        RMQ[[RabbitMQ]]
+        ODB[(Order DB)]
+        PDB[(Payment DB)]
+    end
+
+    U -->|HTTP/REST| API
+    API <--> RL
+    API --> UC
+    UC <--> OCache
+    OCache <--> R
+    UC <--> ODB
+
+    UC -->|gRPC| PAPI
+    PAPI --> PUC
+    PUC <--> PDB
+    PUC -->|Publish Event| RMQ
+
+    RMQ -->|Consume| NS
+    NS <--> IDEM
+    IDEM <--> R
+    NS --> ADAPT
+    ADAPT -->|Simulated/Real| SMTP[Email Provider]
 ```
 
 ## Infrastructure
